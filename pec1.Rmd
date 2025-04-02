@@ -1,0 +1,333 @@
+---
+title: "Análisis de datos ómicos (M0-157). Primera prueba de evaluación continua"
+author: "María Torés España"
+date: "2025-03-31"
+output: 
+    bookdown::pdf_document2: 
+      latex_engine: xelatex
+      fig_caption: yes
+      toc: yes
+      toc_depth: 4
+      toc_float: true
+
+---
+<style>
+body {
+text-align: justify}
+</style>
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library("SummarizedExperiment")
+library(dplyr)
+library(tibble)
+library(bookdown)
+library(purrr)
+library(ggplot2)
+library(nortest)
+library(bestNormalize)
+library(PCAtools)
+library("UpSetR")
+library(naniar)
+library(pheatmap)
+library(limma)
+```
+
+\newpage  
+
+# Abstract. 
+
+En este estudio, se analizó un conjunto de datos de metabolómica para investigar los metabolitos asociados a la respuesta a la cirugía bariátrica, independientemente de la magnitud de la pérdida de peso.
+Además, se incluyen otros factores factores clínicos como la edad o el tipo de cirugía.
+
+Se utilizó la clase SummarizedExperiment para organizar los datos y los metadatos, permitiendo un análisis más estructurado y accesible. A través de un análisis exploratorio, incluyendo la visualización de valores faltantes y un análisis de componentes principales (PCA), se identificaron patrones metabólicos clave que podrían estar vinculados a la respuesta clínica a la intervención. A pesar de las limitaciones del dataset, como la presencia de valores faltantes, los resultados sugieren que factores metabólicos más allá de la pérdida de peso pueden influir en la respuesta al tratamiento.
+
+# Objetivos. 
+
+El objetivo principal de este trabajo es realizar un análisis de un conjunto de datos de metabolómica mediante la creación de un objeto de clase `SummarizedExperiment` que contenga tanto los datos experimentales como los metadatos asociados. A partir de este objeto, se llevará a cabo un análisis exploratorio para obtener una visión general de los datos, lo que permitirá identificar patrones, relaciones y posibles áreas de interés en el contexto biológico.  
+
+El trabajo se complementará con la creación de un repositorio de GitHub que contendrá el informe, el objeto `SummarizedExperiment` en formato binario, el código R debidamente comentado, los datos en formato texto y los metadatos acompañados de una breve descripción en un archivo markdown. 
+
+# Métodos.  
+
+En este trabajo, se ha trabajado con un conjunto de datos de metabolómica, que incluye tanto las concentraciones de metabolitos en las muestras como los metadatos asociados a las mismas. Los datos fueron obtenidos a partir de archivos CSV que contienen dos componentes principales: los valores de las mediciones de metabolitos y otros datos clínicos (`DataValues_S013.csv`) y los metadatos asociados a las muestras (`DataInfo_S013.csv`). Se selecciona este conjunto de datos porque incluye el archivo de metadatos, lo que facilita la interpretación y análisis de las muestras.     
+
+## Procesamiento de datos. 
+
+Los pasos iniciales incluyeron la carga de los datos en R. Posteriormente, se eliminaron las columnas innecesarias, como la columna de número de línea en el caso de los datos y los encabezados adicionales en los metadatos. Se identificaron las primeras cinco columnas del conjunto de datos como la información de las muestras, que fue separada del conjunto de datos principal para su uso posterior en la creación del objeto `SummarizedExperiment`.    
+
+## Objeto `SummarizedExperiment`.  
+
+El objeto de clase `SummarizedExperiment` fue creado para estructurar adecuadamente los datos y los metadatos. En esta clase, los datos numéricos de metabolómica son almacenados en una matriz, mientras que los metadatos (información sobre las muestras) son almacenados en un data frame. Los datos de las muestras fueron transformados en un formato adecuado, con la creación de un identificador único para cada muestra que se utilizó como nombre de las filas en el objeto `SummarizedExperiment`. Las variables categóricas fueron convertidas en factores.  
+
+## Análisis exploratorio.  
+
+El análisis exploratorio de los datos se llevó a cabo en varias etapas. En primer lugar, se realizó un análisis descriptivo básico de las variables categóricas mediante la creación de tablas de frecuencia para cada una de las variables del `rowData.` Además, se calcularon las proporciones relativas para obtener una visión más clara de la distribución de las categorías.  
+
+Para las variables numéricas, se aplicaron estadísticas descriptivas. Se observó que los datos presentaban una distribución asimétrica, por lo que se optó por la transformación logarítmica para estabilizar la varianza y aproximar la distribución a una forma más simétrica.  
+
+Se realizó un análisis de los valores faltantes en los datos, visualizándolos mediante la función gg_miss_upset(), que permite identificar patrones de datos faltantes a lo largo de las muestras. Además, se asignaron valores de 1 a los valores faltantes en los datos para poder realizar un análisis sin perder información crucial.  
+
+Uno de los enfoques principales del análisis exploratorio fue la reducción de dimensionalidad mediante el análisis de componentes principales (PCA). Este método permitió visualizar la variabilidad global de los datos y detectar posibles patrones en las muestras. Los resultados del PCA fueron visualizados mediante gráficos como el `pairsplot()`, que mostró las relaciones entre los componentes principales, y el `eigencorplot()`, que visualizó las correlaciones de los componentes principales con las variables de metadatos (como el tipo de cirugía). También se generó un gráfico `biplot` para visualizar tanto las muestras como las variables en el espacio de los componentes principales.  
+
+Además de PCA, se generó un `boxplot` para evaluar la distribución de las concentraciones en las muestras, lo que permitió obtener una visión rápida de las variaciones entre los sujetos y las concentraciones medidas.  
+
+Para el análisis estadístico, se utilizó la corrección de *Benjamini-Hochberg* para controlar el error de tipo I en las correlaciones múltiples, lo cual fue esencial para manejar las pruebas realizadas entre los componentes principales y las variables de metadatos.  
+
+
+# Resultados. 
+
+```{r, echo=FALSE,message=FALSE,warning=FALSE}
+
+#Seleccionamos y cargamos el dataset selecionado 
+#que se obtuvo al descargar del repositorio de github mencionado en el enunciado de la PEC1.
+datos<-read.csv("DataValues_S013.csv")
+##Eliminamos esa columna añadida como el número de líneas
+datos <- datos[, -1] 
+mdatos<-read.csv("DataInfo_S013.csv")
+mdatos <- mdatos[, -1] 
+
+#Si exploramos nuestros datos nos datos cuenta de que las cinco primeras columnas corresponden al 
+#`rowData` (osea la información de las muestras) de forma que modificamos nuestros datos acorde.
+##Guardamos el rowData
+info_samples <- datos[, 1:5]
+##Modificamos nuestros datos para crear nuestro objeto 
+##SummarizedExperiment
+datos <- datos[, -c(1:5)]
+mdatos <- mdatos[-c(1:5), ]
+
+#Además vemos que los mdatos están en formato `data.frame`.
+#Esto al algo que deberemos cambiar ya que los objetos de la clase `SummarizedExperiment` 
+#requieren matrices numéricas y dadas como `list`.
+
+datos_mat <- as.matrix(datos)
+
+#Además, los objetos de la clase `SummarizedExperiment` requieren que las filas de los datos (`assay()`) y las filas de la información de las muestras (`colData()`) coincidan en los nombres y que los datos categóricos sean factores.
+##Creamos nuestros ids
+id = paste0("SUBJ_",info_samples$SUBJECTS,"_",
+            gsub(" ", "_", info_samples$SURGERY)
+            , "_","G:",info_samples$Group)
+##Lo añadimos a nuestro rowData
+info_samples <- info_samples %>%
+  mutate(id = id)
+
+##Lo establecemos como nombre de nuestras filas
+info_samples<- column_to_rownames(info_samples,'id')
+
+##Establecemos las variables categóricas como factores
+info_samples <- info_samples %>%
+  mutate(SURGERY = as.factor(SURGERY),
+         GENDER = as.factor(GENDER),
+         Group = as.factor(Group))
+##Finalmente creamos nuestro objeto
+sum_ex <- SummarizedExperiment(assays = list(raw=datos_mat),
+                               rowData=info_samples, 
+                               colData=mdatos)
+
+#--------------------------------ANALISIS EXPLORATORIO----------------------------------------------------------------
+
+datos2 <- datos %>%
+  mutate(id = id)
+datos2<- column_to_rownames(datos2,'id')
+
+
+#--------------------------------TRATAMIENTO DE VALORES FALTANTES----------------------------------------------------------------
+#Como todos tienen en algún momento valores faltantes, la opción de quedarnos solo con aquellos que
+#estén completos se descarta. Por tanto entonces lo que hacemos es designar 1 a los valores faltantes.
+
+NA_clean <- assay(sum_ex, "raw")
+NA_clean[is.na(NA_clean)] <- 1
+assays(sum_ex)$NA_clean <- NA_clean
+#--------------------------------LOGARITMOS Y GUARDADO EN FORMATO BINARIO----------------------------------------------------------------
+#aplicamos logaritmos a nuestros datos sin datos faltantes
+log <- log(assay(sum_ex, "NA_clean"))
+#la guardamos en nuestro contenedor
+assays(sum_ex)$log <- log
+#guardamos
+save(sum_ex, file = "PEC1_SE.Rda")
+```
+
+La principal diferencia entre `SummarizedExperiment` y `ExpressionSet` radica en los argumentos `assays()` y `exprs()` respectivamente. Cuando trabajamos con `exprs()` estamos enfocados en lo que seria datos de transcriptómica (fila=gen y columna=sample). `assays()` es más global (más general), almacena como lista (lo que permite acceder a una matriz específica dentro de una lista de assays: raw, normalised...) y cualquier tipo de datos (metabolómica, proteómica...)
+
+## Análisis exploratorio de datos. 
+
+Este análisis descriptivo están orientados a obtener una comprensión más completa de los datos y sus relaciones. Algunos estadísticos relevantes podrían ser:  
+
+### Tabla de frecuencias de variables categóricas.  
+
+Importante para ver si alguna categoría domina nuestro conjunto de datos y tener una visión clara de la composición de las variables.
+
+```{r}
+info_samples %>%
+  ##Esto crea una lista donde cada elemento es la tabla
+  map(~ table(.))
+```
+
+Podemos además visualizar la frecuencia relativa porcentual.
+
+```{r}
+info_samples[c(2:5)] %>%
+    map(~ prop.table(table(.))*100)
+```
+
+### Un resumen estadístico de las variables numéricas:
+
+```{r}
+##Como tenemos tantas variables, para mostrar el output en el documento, 
+##se seleccionan 5 variables 
+summary(datos[6:11])
+```
+
+De aquí podemos observar que los datos están bastante asimétricos, por lo que la mejor opción es aplicar logaritmos para volverlos simetricos, pero antes de esto debemos analizar los valores faltantes.
+
+
+### Visualización de valores faltantes. 
+
+Los datasets a veces tienen valores `NA`, estos son fáciles de visualizar:
+
+```{r echo=FALSE}
+datos2 <- datos %>%
+  mutate(id = id)
+
+datos2<- column_to_rownames(datos2,'id')
+
+gg_miss_upset(as.data.frame(t(datos2)),text.scale = 0.3,
+            nsets=n_var_miss(as.data.frame(t(datos2))))
+
+
+```
+
+Podemos observar  las sujetos que contienen datos faltantes, además de los casos en los que estos tienen datos faltantes en común (interaciones).
+
+Si quisieramos saber con exactitud cuando sujetos tienen datos faltantes:  
+```{r echo=FALSE}
+n_var_miss(t(datos2))
+```
+
+Además también es fácil visualizar el número de valores faltantes en cada caso:
+
+```{r echo=FALSE}
+gg_miss_case(as.data.frame(t(datos2)))
+```
+
+Como todos tienen en algún momento valores faltantes, la opción de quedarnos solo con aquellos que estén completos se descarta. Por tanto entonces lo que hacemos es **designar 1 a los valores faltantes**.
+
+```{r echo=FALSE}
+NA_clean <- assay(sum_ex, "raw")
+NA_clean[is.na(NA_clean)] <- 1
+assays(sum_ex)$NA_clean <- NA_clean
+```
+
+Una vez hemos tratados los valores faltantes, podemos aplicar logaritmos para su correcta normalización y guardar nuestros datos en formato binario.
+```{r echo=FALSE,warning=FALSE}
+log <- log(assay(sum_ex, "NA_clean"))
+assays(sum_ex)$log <- log
+save(sum_ex, file = "PEC1_SE.Rda")
+```
+
+
+### Exploración gráfica.   
+
+#### Análisis de Componentes Principales (PCA).  
+
+
+Nos permite reducir la dimensionalidad de nuestros sin perder información clave, de forma que captura la mayor parte de la variabilidad y permitiéndonos ver patrones globales.  
+
+```{r echo=FALSE}
+##Análisis de componentes principales (PCA)
+pca_res <- pca(t(assay(sum_ex, "NA_clean")), metadata = rowData(sum_ex))
+```
+
+Para ver las relaciones entre los diferentes componentes principales. Cada gráfico representa la correlación entre dos componentes principales.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+pairsplot(pca_res)
+```
+
+Se genera también un gráfico de correlación de los componentes principales con las metavariables de las muestras.  El gráfico mostrará entonces la relación entre cada componente y las variables de nuestras metavariables. Se calcula la correlación de Pearson, con corrección por pruebas múltiples (método de *Benjamini-Hochberg*). 
+
+
+```{r message=FALSE, warning=FALSE, echo=FALSE}
+eigencorplot(pca_res,
+    components = getComponents(pca_res),
+    metavars = colnames(info_samples),
+    col = c('white', 'lightblue', 'turquoise', 'blue', 'darkblue'),
+    cexCorval = 0.25,
+    cexLabX= 0.5,
+    cexLabY= 0.6,
+    fontCorval = 2,
+    posLab = 'all',
+    rotLabX = 45,
+    scale = TRUE,
+    main = bquote(PCA ~ Pearson ~ r^2 ~ correlates),
+    plotRsquared = TRUE,
+    corFUN = 'pearson',
+    corUSE = 'pairwise.complete.obs',
+    corMultipleTestCorrection = 'BH',
+    signifSymbols = c('****', '***', '**', '*', ''),
+    signifCutpoints = c(0, 0.0001, 0.001, 0.01, 0.05, 1))
+```
+
+Los números de las celdas representan los valores $r²$, indicando cuanta varianza explica cada componente principal en relación con factores Grupo, Género, Edad, Cirugía y Sujetos.  
+
+
+También con un gráfico biplot se visualizan las muestras y las variables en el espacio de los componentes principales. Nuestros sujetos se colorean en función del sexp pero podría hacer con cualquier otra variable (surgery, group, etc). En caso de que hubiera una clara separación entre grupos, significaría que los perfiles metabólicos son diferentes según tipo de cirugía.
+
+```{r, warning=FALSE, message=FALSE, echo=FALSE}
+biplot(pca_res,
+    colby = 'GENDER', colkey = c('M' = 'forestgreen', 'F' = 'purple'),
+    colLegendTitle = 'GENDER',
+      encircle = TRUE,
+      encircleFill = TRUE,
+    hline = 0, vline = c(-25, 0, 25),
+    legendPosition = 'top', legendLabSize = 16, legendIconSize = 8.0)
+```
+
+Los dos componentes principales (PC1 y PC2) tienen aproximadamente casi el 50% de la varianza total de nuestros datos. Como nuestro clustering fue basado en el sexo, esto nos indicaría que esto es un factor importante que está influyendo en la variación de nuestro perfil metabólico.
+
+
+#### Boxplot y Gráfico de densidad. 
+
+
+Generamos un boxplot de las concentraciones en cada sujeto, permitiendo evaluar la distribución de los datos en nuestro objeto `sum_ex` y un gráfico de densidad para visualizar la distribución de los metabolitos. Esperamos que si nuestra  transformación logarítmica fue efectiva, la distribución sea más simétrica ya que picos múltiples podrían sugerir grupos de muestras con perfiles metabólicos distintos. 
+
+```{r warning=FALSE, echo=FALSE}
+par(mar = c(5, 10, 4, 2))
+boxplot(t(assay(sum_ex, "log")),
+        xlab = "Concentración",
+        horizontal = TRUE,  las = 2, main= "Sujeto/Concentración",
+        col=palette.colors())
+```
+
+Los outliers de nuestro diagrama de caja representan valores atípicos, lo que sugiere que hay sujetos con metabolitos que presentan concentraciones fuera del rango típico, quizás influido por los valores faltantes en esos sujetos.  
+
+```{r warning=FALSE, echo=FALSE}
+plotDensities(assay(sum_ex,"log"), legend=F, main= "Density Plot",bw=0.5)
+```
+
+También vemos que nuestra normalización fue efectiva, en el gráfico de densidad hay una gran superposición de curvas, es decir distribuciones similares (esto también se ve en el diagrama de cajas). Sin embargo, el hecho de haber múltiples picos puede que nos indique subgrupo de metabolitos.
+
+# Discusión.  
+
+En este estudio se ha abordado la exploración de metabolitos asociados a la respuesta a la cirugía bariátrica.  
+Una de las principales limitaciones del estudio es la cantidad de los datos disponibles. Aunque el conjunto de datos seleccionado incluye información relevante sobre las muestras, la presencia de valores faltantes  puede haber influido en los resultados obtenidos. Si bien se aplicaron técnicas para manejar los valores faltantes, la imputación de valores que hicimos para tratar esos valores pueden introducir sesgos que afectan la validez de nuestros hallazgos.   
+
+Además, la representación de las muestras en el conjunto de datos podría no ser completamente representativa de la población general ya que únicamente se disponian de 39 sujetos y además mayoritariamente mujeres. No fueron únicamente esas las limitacdiones, ya que los datos estaban en general desvalanceados (más cantidad de sujetos con un tipo de cirugía en concreto o más sujetos del grupo 1 que del 2 entre otros). Todo esto va a limitar la capacidad de generalizar cualquier resultado obtenido.  
+
+En cuanto al análisis realizado, aunque se emplearon métodos robustos de exploración de datos como el análisis de componentes principales (PCA), que permitió reducir la dimensionalidad y observar patrones en los datos, también existe el riesgo de sobreinterpretar los resultados si no se validan con un conjunto de datos independiente.
+
+
+# Conclusión. 
+
+El análisis de los metabolitos asociados a la respuesta a la cirugía bariátrica ha proporcionado información sobre los posibles patrones metabólicos que podrían influir en el éxito de la intervención. A través de técnicas de análisis exploratorio, como el análisis de componentes principales, la visualización de correlaciones y otras representaciones gráficas, se ha logrado identificar características clave en los datos que podrían ser indicativas de diferencias biológicas en la respuesta a la cirugía.   
+
+# Referencias. 
+
+Repositorio del dataset: [nutrimetabolomics](https://github.com/nutrimetabolomics/metaboData.git)   
+
+
+Palau-Rodriguez, M., Tulipani, S., Marco-Ramell, A., Miñarro, A., Jáuregui, O., Sanchez-Pla, A., Ramos-Molina, B., Tinahones, F. J., & Andres-Lacueva, C. (2018). Metabotypes of response to bariatric surgery independent of the magnitude of weight loss. *PLoS ONE*, 13(6), e0198214. [*https://doi.org/10.1371/journal.pone.0198214*](https://doi.org/10.1371/journal.pone.0198214)  
+
+
+
+URL al repositorio creado: [https://github.com/MTE23/PEC1_MARIA_TORES_ESPANA.git](https://github.com/MTE23/PEC1_MARIA_TORES_ESPANA.git)
